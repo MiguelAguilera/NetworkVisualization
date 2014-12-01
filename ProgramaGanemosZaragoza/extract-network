@@ -1,0 +1,86 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import MySQLdb
+import json
+import numpy as np
+
+def extract_votes(cur):
+
+	users=[]
+	proposals=[]
+	votes=[]
+	cur.execute("SELECT usuario_id, propuesta_id, propuesta_voto FROM prog_likes_propuesta")
+	for row in cur.fetchall() :
+		users=users+[int(row[0])]
+		proposals=proposals+[int(row[1])]
+		votes=votes+[(int(row[0]),int(row[1]),int(row[2]))]
+	users=list(set(users))
+	proposals=list(set(proposals))
+	return users,proposals,votes
+	
+def extract_proposals(cur):
+
+	names={}
+	sizes={}
+	cur.execute("SELECT id, titulo, sum_likes, positivos, negativos FROM prog_propuestas")
+	for row in cur.fetchall() :
+		pid=int(row[0])
+		names[pid]=row[1]
+		points=int(row[2])
+		pos=int(row[3])
+		neg=int(row[4])
+		points=np.log2(pos+neg)*((pos-neg)/(pos+neg+0.0001))
+		if points<1:
+			points=1
+		sizes[pid]=1+np.log2(points)
+	return names, sizes
+	
+keys_file='db.keys'
+with open(keys_file) as f:
+	user = f.readline().strip("\n")
+	password = f.readline().strip("\n")
+	host = f.readline().strip("\n")
+
+db = MySQLdb.connect(host=host, # your host, usually localhost
+                     user=user, # your username
+                      passwd=password, # your password
+                      db="selecc_candidatos") # name of the data base
+                      
+cur = db.cursor() 
+
+	
+(users,proposals,votes)=extract_votes(cur)
+(names, sizes)=extract_proposals(cur)
+
+nodes=[]
+links=[]
+
+for pid in proposals:
+	node={}
+	node["name"]=names[pid]
+	node["type"]="proposal"
+	node["size"]=sizes[pid]
+	nodes=nodes+[node]
+	
+for u in users:
+	node={}
+	node["name"]="user"+str(u)
+	node["type"]="user"
+	node["size"]=1
+	nodes=nodes+[node]
+	
+for v in votes:
+	link={}
+	link["source"]=users.index(v[0])+len(proposals)
+	link["target"]=proposals.index(v[1])
+	link["value"]=v[2]
+	links=links+[link]
+
+data={}
+data["nodes"]=nodes
+data["links"]=links
+
+with open('net.json', 'w') as outfile:
+  json.dump(data, outfile)
+
